@@ -19,13 +19,29 @@ the same `(H, W)`.
 
 ## Install
 
+Use a dedicated conda env — `torch` and a pinned `numpy<2` would conflict with
+most existing envs.
+
 ```bash
-conda activate argo
+conda create -n tomo-center-ai python=3.10 pip -y
+conda activate tomo-center-ai
 pip install -e /path/to/tomo-center-ai
 ```
 
-`torch` is listed as a dependency; install the CUDA build separately if you want
-GPU inference. CPU works (slowly).
+The editable install (`pip install -e .`) pulls every runtime dep declared in
+`pyproject.toml`. The full list:
+
+| Package    | Why                                                          |
+| ---------- | ------------------------------------------------------------ |
+| `numpy<2`  | array ops; pinned because `torch 2.2.x` wheels were built against NumPy 1.x |
+| `pillow`   | image resize (PIL `Image.fromarray` / `BILINEAR`) inside the inference pipeline |
+| `tifffile` | reading TIFF slices from the input folder                    |
+| `torch`    | DINOv2 backbone + classifier head                            |
+| `einops`   | tensor rearrange used inside `model_archs.py`                |
+
+GPU inference is automatic when CUDA is available — install the matching
+`torch` CUDA wheel for your system (see https://pytorch.org/get-started). CPU
+works but is slow.
 
 ## Get the model checkpoint
 
