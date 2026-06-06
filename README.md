@@ -57,6 +57,30 @@ tomo-center-ai /path/to/recons \
     --out-dir   /path/to/out
 ```
 
+### Example
+
+200 slices reconstructed at centers 974.5–1074.0, run on tomo4 (GPU):
+
+```console
+$ tomo-center-ai \
+    /data2/2BM/2023-04/Strumendo-2023-04_rec/try_center/CaCO3room_001/ \
+    --model-path /home/beams/2BMB/models/datav2_518_full_finetune.pt \
+    --out-dir    ~/tomo-center-ai-out/CaCO3room_001 \
+    --plot
+2026-06-05 20:03:03,134 - Loading TIFFs from /data2/2BM/2023-04/Strumendo-2023-04_rec/try_center/CaCO3room_001 ...
+2026-06-05 20:03:05,058 -   200 slices, shape (2048, 2048), dtype float32
+2026-06-05 20:03:05,059 -   center range: 974.5 .. 1074.0
+2026-06-05 20:03:06,894 - starting model inference...
+2026-06-05 20:03:06,894 - Downsample factor is 1. No resizing applied.
+2026-06-05 20:03:11,113 - done. Elapsed time is 4.22 s.
+2026-06-05 20:03:11,121 - Best center(s):
+2026-06-05 20:03:11,121 -   1023.0
+```
+
+Score curve written to `<out-dir>/scores.png`:
+
+![Score curve example](docs/source/img/scores.png)
+
 ### How centers are paired with TIFFs
 
 By default the **last numeric token in each filename stem** is used as that
@@ -105,16 +129,23 @@ tomo-center-ai /path/to/recons \
 tomo-center-ai /path/to/recons --model-path model.pt --plot my-scan.png
 ```
 
-A sharp peak with neighbors tapering off → confident pick. A flat curve or
-several near-ties at the top → the sweep was too coarse, too narrow, or the
-slices don't carry enough signal for the classifier to discriminate; re-sweep
-finer around the picked value and run again.
+A sharp peak with neighbors tapering off → confident pick (see the
+[example](#example) above). A flat curve or several near-ties at the top → the
+sweep was too coarse, too narrow, or the slices don't carry enough signal for
+the classifier to discriminate; re-sweep finer around the picked value and run
+again.
 
 ## Attribution
 
 - `src/tomo_center_ai/ai/inference.py` — vendored from
-  `tomocupy/src/tomocupy/ai/inference.py` (only the internal import path changed).
+  `tomocupy/src/tomocupy/ai/inference.py`. Changes vs. upstream: internal
+  import path; switched `print()` to the package logger; fixed an
+  `UnboundLocalError` in the single-instance branch (`patch_corner` →
+  `patch_corners`).
 - `src/tomo_center_ai/ai/model_archs.py` — vendored verbatim from
   `tomocupy/src/tomocupy/ai/model_archs.py`. It in turn includes a DINOv2 ViT
   (Apache-2.0, Meta) and attention pooling (MIT, Ilse & Tomczak).
+- `src/tomo_center_ai/logging.py` — adapted from
+  `tomocupy/src/tomocupy/logging.py` (same colored-console formatter, scoped
+  to the `tomo_center_ai.*` logger tree).
 - See `LICENSE` for the upstream BSD-3 terms.

@@ -6,8 +6,11 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from tomo_center_ai import logging as tca_logging
 from tomo_center_ai.io_tiff import load_folder
 from tomo_center_ai.ai.inference import inference_pipeline
+
+log = tca_logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,11 +96,12 @@ def main(argv: list[str] | None = None) -> int:
     _validate_scale_lists(args)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    tca_logging.setup_custom_logger()
 
-    print(f"Loading TIFFs from {args.folder} ...")
+    log.info("Loading TIFFs from %s ...", args.folder)
     stack, centers, paths = load_folder(args.folder, args.centers_file)
-    print(f"  {len(paths)} slices, shape {stack.shape[1:]}, dtype {stack.dtype}")
-    print(f"  center range: {min(centers)} .. {max(centers)}")
+    log.info("  %d slices, shape %s, dtype %s", len(paths), stack.shape[1:], stack.dtype)
+    log.info("  center range: %s .. %s", min(centers), max(centers))
 
     infer_args = SimpleNamespace(
         infer_use_8bits=args.use_8bits,
@@ -117,10 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     chosen = result["centers"]
 
-    print("\nBest center(s):")
+    log.info("Best center(s):")
     for c in chosen:
-        print(f"  {c:.1f}")
-    print(f"\nAppended to {args.out_dir / 'center_of_rotation.txt'}")
+        log.info("  %.1f", c)
 
     if args.plot is not None:
         plot_path = (
@@ -129,16 +132,20 @@ def main(argv: list[str] | None = None) -> int:
             else args.plot
         )
         _plot_scores(result["candidates"], result["scores"], chosen, plot_path)
-        print(f"Wrote score plot to {plot_path}")
+        log.info("Wrote score plot to %s", plot_path)
 
     return 0
 
 
 def _plot_scores(candidates, scores, chosen, out_path: Path) -> None:
-    """Save a probability-vs-candidate-center plot. Lazy-imports matplotlib."""
+    """Save (and display, if a GUI is available) the score-vs-center plot."""
+    import os
     try:
         import matplotlib
-        matplotlib.use("Agg")  # headless backend; no display needed
+        # Only force the headless backend when no display is available;
+        # otherwise let matplotlib pick an interactive one so plt.show() works.
+        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError as e:
         raise SystemExit(
@@ -173,6 +180,8 @@ def _plot_scores(candidates, scores, chosen, out_path: Path) -> None:
     ax.legend(uniq_h, uniq_l, loc="best")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
+    if matplotlib.get_backend().lower() != "agg":
+        plt.show()  # blocks until the window is closed
     plt.close(fig)
 
 

@@ -8,7 +8,10 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 
+from tomo_center_ai import logging as tca_logging
 from tomo_center_ai.ai.model_archs import ClassificationModel, _make_dinov2_model
+
+log = tca_logging.getLogger(__name__)
 
 def sample_patch_corner(mask,window_size,num_windows):
     sample_patch_probs = (mask / mask.sum()).reshape((-1,1)).squeeze().astype(np.float64)
@@ -59,17 +62,17 @@ def inference_pipeline(args, img_cache_original, center_of_rotation_cache, out_d
     msg = model.load_state_dict(states,strict=False)
     model.to(device)
 
-    print('starting model inference...')
+    log.info('starting model inference...')
     t_start3 = time.time()
 
     imgs_cache = []
     for downsample_factor in downsample_factors:
         if downsample_factor > 1:
-            print(f"Resizing with downsample factor {downsample_factor}.")
+            log.info("Resizing with downsample factor %d.", downsample_factor)
         else:
-            print(f"Downsample factor is {downsample_factor}. No resizing applied.")
+            log.info("Downsample factor is %d. No resizing applied.", downsample_factor)
         if use_8bits:
-            print("Requantizing using 8 bits.")
+            log.info("Requantizing using 8 bits.")
         img_cache = []
 
         for img_ in img_cache_original:
@@ -122,7 +125,7 @@ def inference_pipeline(args, img_cache_original, center_of_rotation_cache, out_d
                     imgs.append(img)
                 sample = {'images':torch.cat(imgs,dim=1)}
             else:
-                img = img_array[patch_corner[0]:patch_corner[0]+sz,patch_corner[1]:patch_corner[1]+sz]
+                img = img_array[patch_corners[0]:patch_corners[0]+sz,patch_corners[1]:patch_corners[1]+sz]
                 img = torch.from_numpy(img).to(device=device,dtype=torch.float32).unsqueeze(0).unsqueeze(0).unsqueeze(0)
                 sample = {'images': img}
             samples.append(sample)
@@ -130,7 +133,7 @@ def inference_pipeline(args, img_cache_original, center_of_rotation_cache, out_d
             feature = model(samples)
         features.append(feature)
     t_stop3 = time.time()
-    print(f"done. Elapsed time is {t_stop3-t_start3} s.")
+    log.info("done. Elapsed time is %.2f s.", t_stop3 - t_start3)
 
     features_all = torch.cat(features,dim=0).detach().cpu().numpy()
     if args.infer_save_intermediate_data:
