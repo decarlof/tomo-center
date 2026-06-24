@@ -159,7 +159,6 @@ root/
 Each TIFF is one 2D reconstructed slice.
 #### Metadata
 ```
-...
 caseA 1012.0 (2424,2424)
 caseB 1012.5 (2424,2424)
 ...
