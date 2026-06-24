@@ -40,11 +40,14 @@ The editable install pulls every runtime dep declared in `pyproject.toml`:
 GPU is automatic when CUDA is available — install the matching `torch` CUDA
 wheel for your system (see https://pytorch.org/get-started). CPU works but is
 slow.
+```bash
+pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu121
+```
 
 ## Get the model checkpoint
 
 ```
-https://anl.box.com/s/4o8qcig6pl9k8p7x4z3qqbrpgnjipolq
+https://anl.box.com/s/k85a89kyplzd56hnjudw4ergt6ojfhoa
 ```
 
 ## `find` — pick the best center
@@ -125,56 +128,44 @@ tomo-center find /path/to/recons --model-path model.pt --plot
 ```
 
 A sharp peak with neighbors tapering off → confident pick (see the
-[example](#example) above). A flat curve or several near-ties at the top → the
-sweep was too coarse, too narrow, or the slices don't carry enough signal for
-the classifier to discriminate; re-sweep finer around the picked value and run
-again.
+[example](#example) above). Configure --num-windows and --window-size to balance computation and accuracy.
 
 ## `train` — fine-tune the classifier head
 
-Use this to adapt the shipped checkpoint to a new sample family. Only the
-**1,538-parameter classifier head** is trained — the DINOv2 backbone stays
-frozen (the vendored `ClassificationModel.forward` enforces that). Full
-backbone fine-tuning is out of scope for this repo.
+Use this to adapt the shipped checkpoint to a new sample family. Supports both full fine tuning and linear probing. In the linear probing mode, only the
+**light-weighted pooling weights and the classifier head** are trained — the DINOv2 backbone stays
+frozen (the vendored `ClassificationModel.forward` enforces that).
 
 ### Data layout
+#### Images
 
 ```
-labels/
-  centered/
-    sampleA_1023.0.tif        # the visually-picked center from sample A's sweep
-    sampleB_1018.5.tif        # ...from sample B's sweep
-    sampleC_1031.2.tif        # ...from sample C's sweep
+root/
+  caseA/
     ...
-  off_centered/
-    sampleA_980.0.tif         # any "obviously wrong" centers from sample A
-    sampleA_1050.0.tif
-    sampleB_1000.0.tif
-    sampleC_1080.0.tif
+    sampleA_1023.0.tif
+    sampleA_1023.5.tif
+    sampleA_1024.0.tif
+    ...
+  caseB/
+    ...
+    sampleB_980.0.tif
+    sampleB_980.5.tif
+    sampleB_981.0.tif
+    sampleB_981.5.tif
     ...
 ```
 
-Each TIFF is one 2D reconstructed slice. Label = which subfolder it's in.
+Each TIFF is one 2D reconstructed slice.
+#### Metadata
+```
+...
+caseA 1012.0 (2424,2424)
+caseB 1012.5 (2424,2424)
+...
+```
 
-**Per sweep there is only one correct center**, so `centered/` gets one
-positive per sample. To train a binary classifier you need many positives,
-which means you need **labels from many different samples**. A practical
-recipe: run a CoR sweep on each of N representative scans (different
-materials, contrasts, artifacts), visually pick the correct reconstruction
-for each, drop it in `centered/`, and drop a handful of obviously-wrong
-reconstructions from the same sweep into `off_centered/`. Aim for at least
-~30 samples to get a useful training set.
-
-(Optional: if you accept a tolerance band, copy a small bracket — e.g.
-`1022.5, 1023.0, 1023.5` — to `centered/` from each sweep. Slightly dilutes
-the positive signal but gives the head more data; not strictly necessary.)
-
-### Preparing labels from facility reconstruction output
-
-Most reconstruction tools don't write files in the flat `<sample>_<center>.tif`
-form that `train` expects — they put the sample in a per-sweep folder and only
-the center in the filename. The fix is a one-time copy + rename per labeled
-sample.
+Metadata are recorded in .txt files, one per root directory. Each line corresponds to an individual case (sub-directory under the root directory containing the TIFFs) and consists of the sub-directory name, the actual center-of-rotation value, and the 2-D image size. 
 
 #### Tomocupy
 
@@ -184,35 +175,15 @@ sample.
 .../try_center/<SAMPLE>/recon_<CENTER>.tif
 ```
 
-— sample in the folder, center in the file. Collect labels with:
+— sample in the folder, center in the file. The above training image file structures is compatible with tomocupy reconstruction.
 
-```bash
-mkdir -p ~/labels/centered ~/labels/off_centered
-
-SWEEP=/data2/2BM/2023-04/Strumendo-2023-04_rec/try_center/CaCO3room_001
-SAMPLE=CaCO3room_001
-PICKED=1023.00
-
-# the visually-picked center → positive
-cp $SWEEP/recon_${PICKED}.tif ~/labels/centered/${SAMPLE}_${PICKED}.tif
-
-# a handful of obviously-wrong centers from the same sweep → negatives
-for c in 980.00 1000.00 1050.00 1070.00; do
-    cp $SWEEP/recon_${c}.tif ~/labels/off_centered/${SAMPLE}_${c}.tif
-done
-```
-
-Verify the exact tomocupy filename format with `ls $SWEEP/ | head` first —
-zero-padding and decimal precision can vary by tomocupy version.
-
-Repeat for each sample you label, then point `tomo-center train` at `~/labels/`.
 
 #### Other facilities / other reconstruction tools
 
-The recipe above is the template. `tomo-center train` only requires:
+The recipe above is the template. `tomo-center train` requires at minimum:
 
-1. Files live in `centered/` or `off_centered/` under one parent directory.
-2. They're TIFF (`.tif` / `.tiff`).
+1. Files live in `.../try_center/<SAMPLE>`, with one metadata file and one enlarge factor (for training data up-sampling) per `.../try_center/` root directory. Multiple root directories and metadata files are supported and their numbers should match.
+2. Image files are TIFF (`.tif` / `.tiff`).
 3. Names are unique within their subfolder — `<sample>_<center>.tif` is a safe
    convention.
 
@@ -223,25 +194,24 @@ different folder/filename schemes).
 ### Run
 
 ```bash
-tomo-center train /path/to/labels \
+tomo-center train --image-root /path/to/root1 /path/to/root2 ...\
+    --meta-info-file /path/to/metadata1 /path/to/metadata2 ...\
+    --enlarge-factor 1 1 ...\
     --resume /path/to/datav2_518_full_finetune.pt \
     --out    /path/to/finetuned_model.pt
 ```
-
-`--resume` is strongly recommended: starting fresh requires downloading
-DINOv2's public weights from Meta via `torch.hub`, which needs internet (won't
-work on private beamline networks).
 
 ### Defaults and key flags
 
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--epochs` | 20 | Head-only training is fast — try a few values. |
-| `--batch-size` | 8 | Bump up to fit GPU memory. |
+| `--batch-size` | 2 | Bump up to fit GPU memory. |
 | `--lr` | 5e-5 | AdamW. |
 | `--val-split` | 0.1 | Held-out fraction for per-epoch val accuracy logging. |
-| `--window-size` | 224 | Must match the value you use at inference. |
-| `--no-augment` | off | By default training uses random horizontal flip + small (±sz/8) crop offset. |
+| `--window-size` | 518 | Window size used to crop patches from the original tomograms. |
+| `--num-windows` | 24 | When set involks multi-instance learning. |
+| `--no-augment` | off | By default training uses random horizontal flip. |
 | `--base-model` | `dinov2_vitb14` | Backbone variant for the (rare) from-scratch path. |
 
 ### Output
