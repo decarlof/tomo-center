@@ -14,7 +14,7 @@ Two subcommands:
 | Command | What it does |
 | --- | --- |
 | `tomo-center find`  | Score a folder of reconstructed slices (one per candidate center) and report the best center. |
-| `tomo-center train` | Fine-tune the classifier head on labeled slices to adapt the shipped checkpoint to a new sample family. |
+| `tomo-center train` | Fine-tune the shipped checkpoint to tomograms. |
 
 ## Install
 
@@ -101,7 +101,7 @@ Lines starting with `#` are ignored.
 ### Multi-scale inference
 
 The upstream pipeline supports running multiple `(downsample, num_windows, window_size)`
-scales and combining their features. Pass matching-length lists:
+scales and combining their features for optimal accuracy. Pass matching-length lists:
 
 ```bash
 tomo-center find /path/to/recons --model-path model.pt \
@@ -130,11 +130,10 @@ tomo-center find /path/to/recons --model-path model.pt --plot
 A sharp peak with neighbors tapering off → confident pick (see the
 [example](#example) above). Configure --num-windows and --window-size to balance computation and accuracy.
 
-## `train` — fine-tune the classifier head
+## `train` — fine-tune the model
 
-Use this to adapt the shipped checkpoint to a new sample family. Supports both full fine tuning and linear probing. In the linear probing mode, only the
-**light-weighted pooling weights and the classifier head** are trained — the DINOv2 backbone stays
-frozen (the vendored `ClassificationModel.forward` enforces that).
+Use this to adapt the shipped checkpoint to tomograms. Supports both full fine tuning and fine tuning the task-specific layers. In the latter scenario, only the
+**light-weighted pooling weights and the classifier head** are trained.
 
 ### Data layout
 #### Images
@@ -199,7 +198,15 @@ tomo-center train --image-root /path/to/root1 /path/to/root2 ...\
     --resume /path/to/datav2_518_full_finetune.pt \
     --out    /path/to/finetuned_model.pt
 ```
-
+By default, the model is fully fine-tuned. To freeze the backbone ViT and only fine-tune the adapter and classification head, run:
+```bash
+tomo-center train --image-root /path/to/root1 /path/to/root2 ...\
+    --meta-info-file /path/to/metadata1 /path/to/metadata2 ...\
+    --enlarge-factor 1 1 ...\
+    --resume /path/to/datav2_518_full_finetune.pt \
+    --out    /path/to/finetuned_model.pt
+    --freeze-backbone-ok
+```
 ### Defaults and key flags
 
 | Flag | Default | Notes |
