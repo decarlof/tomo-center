@@ -34,7 +34,7 @@ The editable install pulls every runtime dep declared in `pyproject.toml`:
 | `numpy<2`  | array ops; pinned because `torch 2.2.x` wheels were built against NumPy 1.x |
 | `pillow`   | image resize (PIL `Image.fromarray` / `BILINEAR`) inside the inference pipeline |
 | `tifffile` | reading TIFF slices from the input folder                    |
-| `torch`    | DINOv2 backbone + classifier head                            |
+| `torch`    | DINOv2 backbone + adaptive pooling layers + classifier head  |
 | `einops`   | tensor rearrange used inside `model_archs.py`                |
 
 GPU is automatic when CUDA is available — install the matching `torch` CUDA
@@ -198,7 +198,7 @@ tomo-center train --image-root /path/to/root1 /path/to/root2 ...\
     --resume /path/to/datav2_518_full_finetune.pt \
     --out    /path/to/finetuned_model.pt
 ```
-By default, the model is fully fine-tuned. To freeze the backbone ViT and only fine-tune the adapter and classification head, run:
+By default, the model is fully fine-tuned. To freeze the backbone ViT and only fine-tune the task-specific weights, run:
 ```bash
 tomo-center train --image-root /path/to/root1 /path/to/root2 ...\
     --meta-info-file /path/to/metadata1 /path/to/metadata2 ...\
