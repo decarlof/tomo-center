@@ -53,15 +53,15 @@ def _add_find_parser(sub: argparse._SubParsersAction) -> None:
                    help="Folder containing one TIFF per candidate center.")
     p.add_argument("--model-path", type=Path, required=True,
                    help="Classifier checkpoint (.pt). Download from "
-                        "https://anl.box.com/s/4o8qcig6pl9k8p7x4z3qqbrpgnjipolq")
+                        "https://anl.box.com/s/k85a89kyplzd56hnjudw4ergt6ojfhoa")
     p.add_argument("--centers-file", type=Path, default=None,
                    help="One float per line, in TIFF-sorted order. If omitted, "
                         "centers are parsed from the filenames (last numeric token).")
     p.add_argument("--out-dir", type=Path, default=Path.cwd(),
                    help="Output directory (default: cwd).")
     p.add_argument("--downsample-factor", type=int, nargs="+", default=[1])
-    p.add_argument("--num-windows", type=int, nargs="+", default=[1])
-    p.add_argument("--window-size", type=int, nargs="+", default=[224])
+    p.add_argument("--num-windows", type=int, nargs="+", default=[3])
+    p.add_argument("--window-size", type=int, nargs="+", default=[518])
     p.add_argument("--use-8bits", action="store_true")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--save-intermediate", action="store_true")
@@ -173,8 +173,13 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
             "and <LABELS_DIR>/off_centered/*.tif."
         ),
     )
-    p.add_argument("labels_dir", type=Path,
-                   help="Directory containing centered/ and off_centered/ subfolders of TIFFs.")
+    p.add_argument("--image-root", type=str,nargs='+',
+                   help="Root directories for the training images, each of which contains multiple subdirectories storing the TIFFs.")
+    p.add_argument("--meta-info-file", type=str,nargs='+',
+                   help="Meta data corresponding to the root directories in txt format.")
+    p.add_argument("--enlarge-factor", type=int,nargs='+',
+                   help="Factor by which training data under each root directory are upsampled.")
+    p.add_argument("--split-kw", type=str,default="case",choices=["case","file"],help="Level of the training data to make the train-validation split.")
     p.add_argument("--out", type=Path, required=True,
                    help="Path to write the best checkpoint (.pt).")
     p.add_argument("--resume", type=Path, default=None,
@@ -195,10 +200,13 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda",
                    help="cuda or cpu (default: cuda; falls back to cpu if unavailable).")
-    p.add_argument("--window-size", type=int, default=224,
+    p.add_argument("--window-size", type=int, default=518,
                    help="Crop size; must match the value used at inference time.")
+    p.add_argument("--num-windows", type=int, default=24)
     p.add_argument("--num-workers", type=int, default=2)
     p.add_argument("--no-augment", action="store_true",
+                   help="Disable random flip + small crop offset on the training set.")
+    p.add_argument("--freeze-backbone-ok", action="store_true",
                    help="Disable random flip + small crop offset on the training set.")
     p.set_defaults(func=cmd_train)
 

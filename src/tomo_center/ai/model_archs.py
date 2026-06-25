@@ -704,13 +704,14 @@ class DinoVisionTransformer(nn.Module):
 
 class ClassificationModel(nn.Module):
     def __init__(self, model, embed_dim:int, num_windows:List[int], num_classes:int=2, multi_instances:bool=False,\
-                       attn_branches:int=1, attn_embed_dim:int=None):
+                       attn_branches:int=1, attn_embed_dim:int=None, freeze_backbone_ok:bool=True):
         super().__init__()
         self.model = model
         self.embed_dim = embed_dim
         self.num_windows = num_windows
         self.num_classes = num_classes
         self.multi_instances = multi_instances
+        self.freeze_backbone_ok = freeze_backbone_ok
 
         if multi_instances:
             if attn_embed_dim is None:
@@ -743,39 +744,67 @@ class ClassificationModel(nn.Module):
         print(f"unexpected keys: {msg.unexpected_keys}")
 
     def forward(self, sample):
-        self.model.eval()
-        assert len(sample) == len(self.num_windows)
-        # if self.model is not None:
-        if len(self.num_windows) == 1:
-        
-            images = sample[0]['images']
-            
-            with torch.no_grad():
+        if self.training:
+            assert len(self.num_windows) == 1
+            images = sample['images']
+            if self.freeze_backbone_ok:
+                self.model.eval()
+                with torch.no_grad():
+                    if not self.multi_instances:
+                        assert self.num_windows[0] == 1
+                        features_ = self.model(images[:,0].repeat(1,3,1,1))
+                    else:
+                        features_ = self.model(rearrange(images,'b k c h w -> (b k) c h w').repeat(1,3,1,1))
+                        features_ = rearrange(features_,'(b k) c -> b k c', k=self.num_windows[0])
+            else:
                 if not self.multi_instances:
                     assert self.num_windows[0] == 1
-                    features_all = self.model(images[:,0].repeat(1,3,1,1))
+                    features_ = self.model(images[:,0].repeat(1,3,1,1),is_training=True)["x_norm_clstoken"]
                 else:
-                    features_all = self.model(rearrange(images,'b k c h w -> (b k) c h w').repeat(1,3,1,1))
-                    features_all = rearrange(features_all,'(b k) c -> b k c', k=self.num_windows[0])
-        elif len(self.num_windows) > 1:
-            assert self.multi_instances
-            features_all = []
-            for idx_,sample_ in enumerate(sample):
-                images = sample_['images']
-                with torch.no_grad():
-                    features_ = self.model(rearrange(images,'b k c h w -> (b k) c h w').repeat(1,3,1,1))
-                    features_ = rearrange(features_,'(b k) c -> b k c', k=self.num_windows[idx_])
-                features_all.append(features_)
-            features_all = torch.cat(features_all,dim=1)
+                    features_ = self.model(rearrange(images,'b k c h w -> (b k) c h w').repeat(1,3,1,1),is_training=True)["x_norm_clstoken"]
+                    features_ = rearrange(features_,'(b k) c -> b k c', k=self.num_windows[0])
+            
+            if self.multi_instances:
+                attn = self.fc(self.attention(features_) * self.gate(features_)) #features_ is b*k*c
+                attn = torch.transpose(attn, 2, 1)  #attn is b*ATTENTION_BRANCHES*K after transposition
+                attn = F.softmax(attn, dim=2)  # softmax over K
+                return torch.mean(self.head(torch.bmm(attn,features_)),dim=1)
+            else:
+                return self.head(features_) #features_ is b*c
 
-        
-        # else:
-        #     features_ = sample['features_']
-        
-        if self.multi_instances:
-            attn = self.fc(self.attention(features_all) * self.gate(features_all)) #features_ is b*k*c
-            attn = torch.transpose(attn, 2, 1)  #attn is b*ATTENTION_BRANCHES*K after transposition
-            attn = F.softmax(attn, dim=2)  # softmax over K
-            return torch.mean(self.head(torch.bmm(attn,features_all)),dim=1)
         else:
-            return self.head(features_all) #features_ is b*c
+            assert len(sample) == len(self.num_windows)
+            # if self.model is not None:
+            if len(self.num_windows) == 1:
+            
+                images = sample[0]['images']
+                
+                with torch.no_grad():
+                    if not self.multi_instances:
+                        assert self.num_windows[0] == 1
+                        features_all = self.model(images[:,0].repeat(1,3,1,1))
+                    else:
+                        features_all = self.model(rearrange(images,'b k c h w -> (b k) c h w').repeat(1,3,1,1))
+                        features_all = rearrange(features_all,'(b k) c -> b k c', k=self.num_windows[0])
+            elif len(self.num_windows) > 1:
+                assert self.multi_instances
+                features_all = []
+                for idx_,sample_ in enumerate(sample):
+                    images = sample_['images']
+                    with torch.no_grad():
+                        features_ = self.model(rearrange(images,'b k c h w -> (b k) c h w').repeat(1,3,1,1))
+                        features_ = rearrange(features_,'(b k) c -> b k c', k=self.num_windows[idx_])
+                    features_all.append(features_)
+                features_all = torch.cat(features_all,dim=1)
+
+            
+            # else:
+            #     features_ = sample['features_']
+            
+            if self.multi_instances:
+                attn = self.fc(self.attention(features_all) * self.gate(features_all)) #features_ is b*k*c
+                attn = torch.transpose(attn, 2, 1)  #attn is b*ATTENTION_BRANCHES*K after transposition
+                attn = F.softmax(attn, dim=2)  # softmax over K
+                return torch.mean(self.head(torch.bmm(attn,features_all)),dim=1)
+            else:
+                return self.head(features_all) #features_ is b*c

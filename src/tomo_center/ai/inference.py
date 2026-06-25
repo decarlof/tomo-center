@@ -61,7 +61,7 @@ def inference_pipeline(args, img_cache_original, center_of_rotation_cache, out_d
     states = {(k.replace("module.", "") if "module." in k else k): v for k, v in states.items()}
     msg = model.load_state_dict(states,strict=False)
     model.to(device)
-
+    model.eval()
     log.info('starting model inference...')
     t_start3 = time.time()
 
