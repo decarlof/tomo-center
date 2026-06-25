@@ -216,7 +216,7 @@ tomo-center train --image-root /path/to/root1 /path/to/root2 ...\
 | `--lr` | 5e-5 | AdamW. |
 | `--val-split` | 0.1 | Held-out fraction for per-epoch val accuracy logging. |
 | `--window-size` | 518 | Window size used to crop patches from the original tomograms. |
-| `--num-windows` | 24 | When set involks multi-instance learning. |
+| `--num-windows` | 24 | When set invokes multi-instance learning. |
 | `--no-augment` | off | By default training uses random horizontal flip. |
 | `--base-model` | `dinov2_vitb14` | Backbone variant for the (rare) from-scratch path. |
 
